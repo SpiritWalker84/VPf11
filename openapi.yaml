@@ -1,0 +1,376 @@
+openapi: 3.1.0
+info:
+  title: VPf11 — HTTP API пользователей
+  version: "1.0.0"
+  description: |
+    Спецификация соответствует реализации после рефакторинга (`src/vpf11/api/blueprint.py`).
+    Предпочтительные пути — под префиксом `/api`. Пути `/adducer`, `/user/{user_id}`, `/bg` —
+    учебные алиасы, сохранённые для обратной совместимости.
+
+    По умолчанию сервис доступен по **HTTP**; TLS задаётся снаружи (например, reverse proxy).
+
+servers:
+  - url: http://127.0.0.1:5000
+    description: Локально (типично `docker compose up`)
+
+tags:
+  - name: Служебное
+    description: Проверка живости и контракт
+  - name: Пользователи
+    description: CRUD-операции над сущностью пользователя (упрощённо)
+  - name: Учётные данные
+    description: Пароль (хранится как bcrypt в БД)
+  - name: Демо
+    description: Фоновая задача и снимок состояния (не для продакшена без доработки)
+
+paths:
+  /health:
+    get:
+      tags: [Служебное]
+      summary: Проверка готовности сервиса
+      operationId: getHealth
+      responses:
+        "200":
+          description: Сервис отвечает
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: ok
+
+  /openapi.yaml:
+    get:
+      tags: [Служебное]
+      summary: Машиночитаемая спецификация OpenAPI (этот документ)
+      operationId: getOpenApiYaml
+      responses:
+        "200":
+          description: Файл спецификации YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Файл спецификации не найден на диске сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/users:
+    post:
+      tags: [Пользователи]
+      summary: Создать пользователя (основной путь)
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+            examples:
+              minimal:
+                value:
+                  name: Alice
+              withTags:
+                value:
+                  name: Bob
+                  tags: ["vip"]
+      responses:
+        "201":
+          description: Пользователь создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateUserResponse"
+        "400":
+          description: Нет JSON, пустое имя или неверный тип tags
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /adducer:
+    post:
+      tags: [Пользователи]
+      summary: Создать пользователя (алиас из учебного примера)
+      operationId: createUserLessonAlias
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: Пользователь создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateUserResponse"
+        "400":
+          description: Ошибка валидации тела запроса
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/users/{user_id}:
+    get:
+      tags: [Пользователи]
+      summary: Получить пользователя по числовому id
+      operationId: getUserById
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Найдено
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /user/{user_id}:
+    get:
+      tags: [Пользователи]
+      summary: Получить пользователя по id (учебный алиас)
+      operationId: getUserByIdLessonAlias
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Найдено
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/users/by-name:
+    get:
+      tags: [Пользователи]
+      summary: Найти пользователя по имени (точное совпадение)
+      operationId: getUserByName
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          description: Имя пользователя
+      responses:
+        "200":
+          description: Найдено
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Параметр name отсутствует или пустой
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/users/{user_id}/credentials:
+    post:
+      tags: [Учётные данные]
+      summary: Задать или обновить пароль (bcrypt-хеш в БД)
+      operationId: setUserCredentials
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetCredentialsRequest"
+      responses:
+        "200":
+          description: Хеш сохранён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          description: Нет JSON или пустой password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Пользователь с таким id не существует
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/background-task:
+    post:
+      tags: [Демо]
+      summary: Запуск демонстрационной фоновой задачи (основной путь)
+      description: |
+        Тело опционально. Поле `id` задаёт целое число для учёта; если нет или невалидно —
+        сервер подставляет случайное. Ответ — **снимок** состояния на момент ответа;
+        фоновый поток может изменить данные сразу после отправки ответа.
+      operationId: postBackgroundTask
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackgroundTaskRequest"
+      responses:
+        "202":
+          description: Задача принята к выполнению (снимок очереди активных id)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackgroundSnapshot"
+
+  /bg:
+    post:
+      tags: [Демо]
+      summary: То же, что /api/background-task (учебный алиас)
+      operationId: postBackgroundTaskLessonAlias
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackgroundTaskRequest"
+      responses:
+        "202":
+          description: Принято
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackgroundSnapshot"
+
+components:
+  parameters:
+    UserId:
+      name: user_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: Первичный ключ пользователя в SQLite
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          const: ok
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      additionalProperties: true
+      properties:
+        error:
+          type: string
+          description: Машинный код ошибки
+
+    User:
+      type: object
+      required: [id, name, tags]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        tags:
+          description: Список тегов (в БД хранится JSON; при сбое декодирования тип может отличаться)
+          type: array
+          items: {}
+
+    CreateUserRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+        tags:
+          type: array
+          items:
+            type: string
+
+    CreateUserResponse:
+      type: object
+      required: [id, name]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+
+    SetCredentialsRequest:
+      type: object
+      required: [password]
+      additionalProperties: false
+      properties:
+        password:
+          type: string
+          minLength: 1
+
+    OkResponse:
+      type: object
+      required: [ok]
+      additionalProperties: false
+      properties:
+        ok:
+          type: boolean
+
+    BackgroundTaskRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          oneOf:
+            - type: integer
+            - type: string
+          description: Целочисленный id для демо; строка может быть приведена к int
+
+    BackgroundSnapshot:
+      type: object
+      required: [len, active]
+      additionalProperties: false
+      properties:
+        len:
+          type: integer
+          minimum: 0
+        active:
+          type: array
+          description: Копия списка активных числовых id на момент ответа
+          items:
+            type: integer

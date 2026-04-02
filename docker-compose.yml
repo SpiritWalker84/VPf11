@@ -1,0 +1,14 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      DATABASE_PATH: /data/app.db
+      # Подставляется из файла .env рядом с compose (если есть) или из окружения хоста
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-dev-change-me}
+    volumes:
+      - app_data:/data
+
+volumes:
+  app_data:
